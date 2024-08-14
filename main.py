@@ -1,120 +1,184 @@
-import math
+import time
+import random
+from flask import Flask, render_template, jsonify
 
-# Constants
-ROOF_AREA = 100  # Roof area in square meters
-RAIN_INTENSITY = 10  # Rainfall intensity in mm/hour
-HARVESTING_EFFICIENCY = 0.85  # Efficiency of the system (85% efficiency)
-TANK_CAPACITY = 5000  # Capacity of storage tank in liters
+app = Flask(__name__)
 
-# Function to calculate the volume of water harvested
-def calculate_harvested_water(roof_area, rain_intensity, efficiency):
-    # Convert rain intensity from mm to meters
-    rain_intensity_m = rain_intensity / 1000
-    # Calculate volume of water (cubic meters)
-    volume = roof_area * rain_intensity_m * efficiency
-    # Convert cubic meters to liters
-    volume_liters = volume * 1000
-    return volume_liters
+# Initializing variables
+rainfall_data = []
+water_level = 0
+max_tank_capacity = 1000  # in liters
+pump_status = "OFF"
 
-# Function to simulate rainwater harvesting over a period of time
-def simulate_rainwater_harvesting(days, daily_rainfall, roof_area, efficiency, tank_capacity):
-    total_harvested = 0
-    tank_storage = 0
+# Function to simulate real-time rainfall monitoring
+def monitor_rainfall():
+    rainfall = random.uniform(0, 20)  # Random rainfall amount in mm
+    rainfall_data.append(rainfall)
+    return rainfall
 
-    for day in range(days):
-        # Calculate harvested water for the day
-        daily_harvest = calculate_harvested_water(roof_area, daily_rainfall[day], efficiency)
-        print(f"Day {day + 1}: Rainfall = {daily_rainfall[day]} mm, Harvested = {daily_harvest:.2f} liters")
+# Function to calculate collected rainwater based on roof area and rainfall
+def calculate_collected_water(rainfall_mm, roof_area=50):
+    collected_water = (rainfall_mm * roof_area * 0.9) / 1000  # in cubic meters (m^3)
+    return collected_water * 1000  # Convert to liters
 
-        # Add harvested water to tank
-        if tank_storage + daily_harvest > tank_capacity:
-            # Overflow occurs
-            overflow = (tank_storage + daily_harvest) - tank_capacity
-            print(f"  Overflow: {overflow:.2f} liters")
-            tank_storage = tank_capacity
-        else:
-            tank_storage += daily_harvest
+# Function to update water level in the tank
+def update_water_level(rainfall_mm):
+    global water_level
+    collected_water = calculate_collected_water(rainfall_mm)
+    water_level += collected_water
+    if water_level > max_tank_capacity:
+        overflow = water_level - max_tank_capacity
+        water_level = max_tank_capacity
+        print(f"Tank overflowed by {overflow:.2f} liters.")
+    else:
+        print(f"Collected {collected_water:.2f} liters of rainwater. Water level: {water_level:.2f} liters.")
 
-        # Add to total harvested
-        total_harvested += daily_harvest
+# Function to control the pump based on water level
+def control_pump():
+    global pump_status
+    if water_level > max_tank_capacity * 0.8:
+        pump_status = "ON"
+        print("Pump is ON to use/store water.")
+    else:
+        pump_status = "OFF"
+        print("Pump is OFF. No need to use/store water.")
 
-        # Daily status
-        print(f"  Tank Storage: {tank_storage:.2f} liters")
+# Function to simulate water usage
+def simulate_water_usage(amount):
+    global water_level
+    if water_level >= amount:
+        water_level -= amount
+        print(f"Used {amount} liters of water. Water level: {water_level:.2f} liters.")
+    else:
+        print(f"Insufficient water in the tank. Current water level: {water_level:.2f} liters.")
 
-    print(f"\nTotal Harvested Water over {days} days: {total_harvested:.2f} liters")
-    print(f"Final Tank Storage: {tank_storage:.2f} liters")
+# Flask route to display dashboard
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Sample rainfall data (in mm) over 10 days
-daily_rainfall = [5, 12, 0, 8, 3, 20, 15, 7, 0, 10]
+# Flask route to get real-time data
+@app.route('/data')
+def get_data():
+    global rainfall_data, water_level, pump_status
+    latest_rainfall = rainfall_data[-1] if rainfall_data else 0
+    return jsonify({
+        'rainfall': latest_rainfall,
+        'water_level': water_level,
+        'pump_status': pump_status
+    })
 
-# Simulate rainwater harvesting
-simulate_rainwater_harvesting(
-    days=len(daily_rainfall),
-    daily_rainfall=daily_rainfall,
-    roof_area=ROOF_AREA,
-    efficiency=HARVESTING_EFFICIENCY,
-    tank_capacity=TANK_CAPACITY
-)
+# HTML content for dashboard (rendered by Flask)
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rainwater Harvesting Dashboard</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }}
+        header {{
+            background-color: #4CAF50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }}
+        section {{
+            margin: 20px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+        }}
+        h2 {{
+            color: #4CAF50;
+        }}
+        .data-box {{
+            display: flex;
+            justify-content: space-around;
+        }}
+        .data-item {{
+            text-align: center;
+            width: 30%;
+            padding: 10px;
+            background-color: #e0f7fa;
+            border-radius: 10px;
+        }}
+        footer {{
+            text-align: center;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }}
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Rainwater Harvesting System Dashboard</h1>
+        <p>Real-time monitoring and control</p>
+    </header>
 
-# Function to calculate potential water savings
-def calculate_water_savings(total_harvested, average_daily_usage, days):
-    # Calculate total water usage over the period
-    total_usage = average_daily_usage * days
-    # Calculate water savings as a percentage
-    savings = (total_harvested / total_usage) * 100
-    return savings
+    <section>
+        <h2>Current Status</h2>
+        <div class="data-box">
+            <div class="data-item">
+                <h3>Rainfall (mm)</h3>
+                <p id="rainfall">0</p>
+            </div>
+            <div class="data-item">
+                <h3>Water Level (liters)</h3>
+                <p id="water_level">0</p>
+            </div>
+            <div class="data-item">
+                <h3>Pump Status</h3>
+                <p id="pump_status">OFF</p>
+            </div>
+        </div>
+    </section>
 
-# User input for daily water usage (in liters)
-average_daily_usage = 150  # Assumed average daily usage in liters per person
-num_people = 4  # Number of people in the household
+    <footer>
+        <p>&copy; 2024 Rainwater Harvesting System</p>
+    </footer>
 
-# Calculate total water usage
-total_water_usage = average_daily_usage * num_people
+    <script>
+        function fetchData() {{
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {{
+                    document.getElementById('rainfall').innerText = data.rainfall.toFixed(2);
+                    document.getElementById('water_level').innerText = data.water_level.toFixed(2);
+                    document.getElementById('pump_status').innerText = data.pump_status;
+                }});
+        }}
+        setInterval(fetchData, 1000);  // Fetch data every second
+    </script>
+</body>
+</html>
+"""
 
-# Calculate potential water savings
-savings_percentage = calculate_water_savings(
-    total_harvested=calculate_harvested_water(ROOF_AREA, sum(daily_rainfall), HARVESTING_EFFICIENCY),
-    average_daily_usage=total_water_usage,
-    days=len(daily_rainfall)
-)
+# Save the HTML template
+with open('templates/index.html', 'w') as f:
+    f.write(HTML_TEMPLATE)
 
-print(f"\nPotential Water Savings: {savings_percentage:.2f}%")
-
-# Function to model water filtration process
-def water_filtration(volume, filter_efficiency):
-    filtered_volume = volume * filter_efficiency
-    waste_volume = volume - filtered_volume
-    return filtered_volume, waste_volume
-
-# Constants for filtration system
-FILTER_EFFICIENCY = 0.95  # 95% filtration efficiency
-
-# Example of filtering harvested water
-filtered_water, waste_water = water_filtration(total_harvested, FILTER_EFFICIENCY)
-print(f"\nFiltered Water: {filtered_water:.2f} liters")
-print(f"Waste Water: {waste_water:.2f} liters")
-
-# Function to estimate annual water savings based on historical rainfall data
-def estimate_annual_savings(roof_area, annual_rainfall, efficiency, tank_capacity, average_daily_usage, num_people):
-    # Calculate potential annual water harvested
-    annual_harvest = calculate_harvested_water(roof_area, annual_rainfall, efficiency)
-    # Calculate potential water savings
-    total_annual_usage = average_daily_usage * num_people * 365
-    savings = (annual_harvest / total_annual_usage) * 100
-    return annual_harvest, savings
-
-# Example annual rainfall (mm)
-annual_rainfall = 800  # Total annual rainfall in mm
-
-# Estimate annual water savings
-annual_harvest, annual_savings = estimate_annual_savings(
-    roof_area=ROOF_AREA,
-    annual_rainfall=annual_rainfall,
-    efficiency=HARVESTING_EFFICIENCY,
-    tank_capacity=TANK_CAPACITY,
-    average_daily_usage=average_daily_usage,
-    num_people=num_people
-)
-
-print(f"\nEstimated Annual Harvest: {annual_harvest:.2f} liters")
-print(f"Estimated Annual Water Savings: {annual_savings:.2f}%")
+if __name__ == '__main__':
+    print("Starting Rainwater Harvesting System...")
+    
+    # Simulate the system running every minute
+    while True:
+        rainfall_mm = monitor_rainfall()
+        update_water_level(rainfall_mm)
+        control_pump()
+        simulate_water_usage(random.uniform(0, 100))  # Simulate random water usage
+        time.sleep(60)  # Wait for 1 minute before the next update
+        
+        # For Flask, run the app only if script is executed directly
+        app.run(debug=True)
